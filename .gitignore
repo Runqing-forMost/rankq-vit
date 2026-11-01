@@ -1,5 +1,4 @@
 # Generated calibration images and model artifacts
-generated_imgs/
 vis_imgs/
 checkpoints/
 *.pt
@@ -9,6 +8,10 @@ checkpoints/
 *.npy
 *.npz
 *.log
+
+# Keep the calibration directory and allow its NumPy cache files.
+!generated_imgs/**/*.npy
+!generated_imgs/**/*.npz
 
 # Python caches and local environments
 __pycache__/
