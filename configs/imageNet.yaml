@@ -1,0 +1,31 @@
+model: "vit_small"
+dataset: "/PATH/TO/YOUR/DATASET"
+batch_size: 32
+memory_bank: 1024
+target_size: 1024
+
+
+# quant
+w_bits: 4
+a_bits: 8
+w_cw: True
+a_cw: False
+
+
+# train
+lr: 1e-3
+recon_lr: 2e-4
+iter: 2000
+# retrain: False
+# keep_r: 1.
+print_freq: 100
+train_batch: 32
+val_batchsize: 200
+num_workers: 8
+calib_batchsize: 32
+warmup: 0.2
+
+# ## quantization-aware generation
+# total_iters: 2
+
+
