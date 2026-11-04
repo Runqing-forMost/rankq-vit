@@ -61,12 +61,7 @@ def contrastive_patch_loss_infoNCE(patch_embeddings, temperature=0.1):
 
 
 @torch.no_grad()
-def jsd_selection(model, data, label, k=32):
-    """Preserve sim_con_loss.jsd_selection scoring and per-image rank tolerance.
-
-    In particular, the legacy smoothed-label/log-softmax KL formula is retained
-    for experiment comparability; this is not a redefinition of standard JSD.
-    """
+def jsd_rank_selection(model, data, label, k=32):
     if not 1 <= k <= len(data) or len(label) != len(data):
         raise ValueError('Selection requires 1 <= k <= sample count and aligned labels.')
     if k == len(data):
@@ -74,7 +69,7 @@ def jsd_selection(model, data, label, k=32):
     if not hasattr(model, 'blocks'):
         raise ValueError('Swin subset selection is unsupported; set target_size=memory_bank.')
     hooks = []
-    scores_jsd, ranks = torch.zeros(len(data)), torch.zeros(len(data))
+    scores_jsd, mean_ranks = torch.zeros(len(data)), torch.zeros(len(data))
     device = next(model.parameters()).device
     was_training = model.training
     model.eval()
@@ -100,14 +95,21 @@ def jsd_selection(model, data, label, k=32):
                 )
                 rank_sum += torch.linalg.matrix_rank(similarities[0])
                 hook.feature = None
-            ranks[i] = (rank_sum / len(hooks)).cpu()
+            mean_ranks[i] = (rank_sum / len(hooks)).cpu()
     finally:
         for hook in hooks:
             hook.remove()
         model.train(was_training)
-    normalized_ranks = (ranks - ranks.min()) / (ranks.max() - ranks.min() + 1e-8)
-    indices = torch.topk(-scores_jsd + 2 * normalized_ranks, k).indices
+    normalized_mean_ranks = (mean_ranks - mean_ranks.min()) / (
+        mean_ranks.max() - mean_ranks.min() + 1e-8
+    )
+    indices = torch.topk(-scores_jsd + 2 * normalized_mean_ranks, k).indices
     return data[indices.to(data.device)]
+
+
+def jsd_selection(model, data, label, k=32):
+    """Compatibility entry point for joint JSD/mean-block-rank selection."""
+    return jsd_rank_selection(model, data, label, k=k)
 
 
 class MainExp:
@@ -154,7 +156,7 @@ class MainExp:
         print(f'Start quantizing {self.args.model}, w: {self.args.w_bits}-bit, '
               f'a: {self.args.a_bits}-bit')
         data, labels = self.load_or_generate(model)
-        data = jsd_selection(model, data, labels, k=self.args.target_size)
+        data = jsd_rank_selection(model, data, labels, k=self.args.target_size)
         return self.block_wise_reconstruction(data, fp_model=model)
 
     def load_or_generate(self, model):
@@ -177,8 +179,6 @@ class MainExp:
                 print(f'Invalid cache; regenerating samples: {error}')
         data, labels = self.data_generation_v3(model)
         cache_dir.mkdir(parents=True, exist_ok=True)
-        # Invalidate the pair first so an interrupted write cannot mix old labels
-        # with new images. The next run will regenerate any incomplete pair.
         label_path.unlink(missing_ok=True)
         np.save(image_path, data.cpu().numpy(), allow_pickle=False)
         np.save(label_path, labels.cpu().numpy(), allow_pickle=False)
@@ -187,7 +187,7 @@ class MainExp:
     def data_generation_v3(self, model):
         args = self.args
         device = next(model.parameters()).device
-        lr = float(getattr(args, 'gen_lr', 0.25 if args.model.startswith('swin') else 0.20))
+        lr = float(getattr(args, 'gen_lr', 0.25 if args.model.startswith('swin') else 0.2))
         epochs = getattr(args, 'gen_epochs', 2)
         iterations = getattr(args, 'gen_iterations', 500)
         warmup = getattr(args, 'gen_warmup', min(100, iterations - 1))
@@ -285,8 +285,7 @@ class MainExp:
                 q_model(calib_data[:32].cuda())
             print('Calibration done.')
         self.test(q_model)
-        # Shared reconstruction helpers use floor division and drop remainders.
-        # Select a divisor, including for calibration sets smaller than 24.
+
         requested = min(getattr(self.args, 'recon_batch_size', 24), len(calib_data))
         batch_size = next(size for size in range(requested, 0, -1) if len(calib_data) % size == 0)
         print(f'Reconstruction batch size: {batch_size} ({len(calib_data)} samples)')

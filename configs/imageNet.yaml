@@ -1,13 +1,13 @@
-model: "vit_small"
-dataset: "/PATH/TO/YOUR/DATASET"
+model: "deit_small"
+dataset: "/PATH/TO/DATASET"
 batch_size: 32
 memory_bank: 1024
-target_size: 1024
+target_size: 128
 
 
 # quant
 w_bits: 4
-a_bits: 8
+a_bits: 4
 w_cw: True
 a_cw: False
 

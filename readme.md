@@ -110,6 +110,17 @@ have not been validated for every model. Swin subset selection is unsupported:
 set `target_size` equal to `memory_bank` for Swin. Synthesis assumes RGB images
 of size 224 × 224 and a 1,000-class ImageNet output head.
 
+### Calibration sample selection
+
+When `target_size < memory_bank`, `jsd_rank_selection` selects samples with
+low JSD and high average rank across all ViT/DeiT blocks. For each sample, it
+computes the patch cosine-similarity matrix rank in every block and averages
+the ranks equally. It min-max normalizes these sample means across the pool,
+then selects the highest `-JSD + 2 * normalized_mean_rank` scores. The JSD term
+retains the existing smoothed-label/log-softmax KL formula for comparability.
+`jsd_selection` remains available as a compatibility wrapper. If `target_size`
+equals `memory_bank`, all samples are used without scoring.
+
 ## Cache and outputs
 
 The default cache contains normalized floating-point image tensors and integer
